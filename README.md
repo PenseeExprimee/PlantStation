@@ -25,7 +25,7 @@ ctest --test-dir build --output-on-failure
 | Notion | Où |
 |---|---|
 | Design patterns | _à compléter_ |
-| Templates | `include/plant/RingBuffer.hpp` |
+| Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` |
 | Lambdas | _à compléter_ |
 | C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final` |
 | Tests unitaires | `tests/` |
@@ -46,3 +46,11 @@ _ `.at(std::size_t index)`, permettant de consulter chaque mesure présente dans
 _ `.add()` pour ajouter une mesure au tampon.
 
 Le type T doit avoir un constructeur par défaut, sans quoi le code ne compilera pas.
+
+## Comment sont traitées les mesures?
+
+Le template MovingAverage contient un tampon (RingBuffer) qui stocke les N dernières mesures, N étant la taille maximale du tampon. 
+La classe fournit:
+- `add(const T &measure)` qui ajoute une nouvelle mesure au tampon.
+_ `average()` qui calcule la moyenne des measures présentent dans le tampon. Cette méthode renvoie
+`std::nullopt` dans le cas où le tampon est vide. La somme de tous les élements est calculée comme un double.
