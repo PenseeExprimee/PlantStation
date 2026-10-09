@@ -21,7 +21,10 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 add_executable(plant_tests tests/test_sensor.cpp)
+add_executable(tampon_tests tests/test_ringBuffer.cpp)
 target_link_libraries(plant_tests PRIVATE plant_core GTest::gtest_main)
+target_link_libraries(tampon_tests PRIVATE plant_core GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(plant_tests)
+gtest_discover_tests(tampon_tests)
