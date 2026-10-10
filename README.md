@@ -87,3 +87,12 @@ Le contrôleur n'est pas copiable puisqu'il possède en attribut un unique_ptr v
 Pour tester le contrôleur, une `FakeStrategy` a été implémentée afin de tester le contrôleur indépendamment des autres stratégies. Le compteur partagé permet de vérifier que la stratégie n'est pas consultée lorsque des règles de sécurité doivent être appliquées.
 
 Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer, d'où la nécessité d'un observateur (pas encore implémenté).
+
+
+## Gestion des différentes configurations
+
+La factory centralise la création des stratégies à partir d’une configuration. Elle retourne ensuite l’interface (pas la classe derrière). 
+La factory comporte des contrôles de sécurité s'assurant que la configuration est valide (seuil compris entre 0 et 100 (bornes incluses) et différent de NaN ). Puisque cette validation se fait seulement dans la factory, elle doit être le point d'entrée. Construire directement WateringThreshold avec un NaN donnerait une stratégie qui arrose en permanence.
+Lors de l'ajout d'une stratégie, on ajoute une classe et on met à jour la factory pour gérer cette nouvelle. (inutile de toucher au contrôleur.)
+Dans le cas où une configuration invalide est passée à la factory, elle renvoie un pointeur nul (qui sera géré par le contrôleur). Une configuration invalide donne un contrôleur qui n’arrose jamais, silencieusement : c’est à l’alarme de le détecter (pas encore implémentée).
+Aujourd'hui la factory permet surtout d'isoler le seul endroit qui connaît les classes concrètes.
