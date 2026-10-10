@@ -24,7 +24,7 @@ ctest --test-dir build --output-on-failure
 ## Notions mises en oeuvre
 | Notion | Où |
 |---|---|
-| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp`  |
+| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `ìnclude/plant/WateringController.hpp`  |
 | Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` |
 | Lambdas | (à venir dans le code de la station) |
 | C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final` |
@@ -70,3 +70,20 @@ Chacune des stratégies d'arrosage prend en argument une structure `WateringCont
 L'utilisation d'un `enum class` plutôt qu'un booléen permettra dans le futur l'ajout d'autres décisions.
 Le seuil est fixé à la construction puisqu'un double n'est pas accepté en paramètre de template en C++17. De plus, un paramètre de template doit être connu à la compilation.
 Pour éviter de noyer la plante, lorsqu'aucune mesure n'est disponible, on attend. Si le capteur reste muet pendant des jours, ce sera à l'alarme de le signaler et agir en conséquence. (alarme prévue)
+
+
+## Comment est contrôlé l'arrosage?
+
+L'idée principale est le fail-safe: en cas de doute, on n'arrose pas.
+Le `WateringController` possède une stratégie d'arrosage et fonctionne comme suit:
+- Si le contrôleur est crée sans stratégie: la plante n'est pas arrosée. Le rôle de l'alarme (pas encore implémentée) sera de détecter un système qui n'arrose jamais.
+- Si le niveau d'eau du réservoir est strictement inférieur au seuil minimal d'eau requis (le seuil étant fixé à la construction du contrôleur), la plante n'est pas arrosée. En cas d'égalité, la stratégie décide. Confier la gestion du réservoir au contrôleur permet de ne pas l'oublier si l'on ajoute de nouvelles stratégies d'arrosage.
+- Si le niveau est inconnu, par sécurité, la plante n'est pas arrosée.
+- Sinon, la stratégie décide d'arroser ou non la plante.
+- Il est possible de changer de stratégie d'arrosage en utilisant la méthode `changeStrategy` du contrôleur. Dans le cas où on tente de changer la stratégie d'arrosage par un pointeur nul, le système conserve la stratégie précédente (on considère que c'est une erreur de l'appelant, alors qu'à la construction, il n'y a pas d'ancienne stratégie à conserver).
+
+Le contrôleur n'est pas copiable puisqu'il possède en attribut un unique_ptr vers la stratégie en cours. La présence de ce pointeur unique explique l'utilisation de std::move dans le constructeur et méthodes de classe, puisqu'un pointeur unique n'est pas copiable.
+
+Pour tester le contrôleur, une `FakeStrategy` a été implémentée afin de tester le contrôleur indépendamment des autres stratégies. Le compteur partagé permet de vérifier que la stratégie n'est pas consultée lorsque des règles de sécurité doivent être appliquées.
+
+Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer, d'où la nécessité d'un observateur (pas encore implémenté).
