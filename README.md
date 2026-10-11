@@ -24,10 +24,10 @@ ctest --test-dir build --output-on-failure
 ## Notions mises en oeuvre
 | Notion | Où |
 |---|---|
-| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `ìnclude/plant/WateringController.hpp` Factory `include/plant/StrategyFactory.hpp` Observer `include/plant/SubscribeHandler.hpp` `include/plant/WateringController.hpp` |
-| Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` |
+| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `include/plant/WateringController.hpp` Factory `include/plant/StrategyFactory.hpp` Observer `include/plant/SubscribeHandler.hpp` `include/plant/WateringController.hpp` `include/plant/EventJournal.hpp` |
+| Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` `include/plant/EventJournal.hpp` |
 | Lambdas | `include/tests/test_controller.cpp` `include/tests/test_handleSubscribers.cpp` |
-| C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final` |
+| C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final`, `static_assert` `std::move` `std::function` `enum class` capture avec initialisation|
 | Tests unitaires | `tests/` |
 
 
@@ -55,7 +55,7 @@ Le type T doit avoir un constructeur par défaut, sans quoi le code ne compilera
 
 ## Comment sont traitées les mesures?
 
-Le template `MovingAverage` possède un tampon `RingBuffer` (ce n'est pas un tampon, inutile d'exposer l'interface de `RingBuffer`) qui stocke les N dernières mesures, N étant la taille maximale du tampon. 
+Le template `MovingAverage` possède un tampon `RingBuffer` (composition plutôt qu’héritage : un filtre n’est pas un tampon, et on ne veut pas exposer son interface) qui stocke les N dernières mesures, N étant la taille maximale du tampon. 
 La classe fournit:
 
 - `add(const T &measure)` qui ajoute une nouvelle mesure au tampon.
@@ -82,24 +82,24 @@ Le `WateringController` possède une stratégie d'arrosage et fonctionne comme s
 - Sinon, la stratégie décide d'arroser ou non la plante.
 - Il est possible de changer de stratégie d'arrosage en utilisant la méthode `changeStrategy` du contrôleur. Dans le cas où on tente de changer la stratégie d'arrosage par un pointeur nul, le système conserve la stratégie précédente (on considère que c'est une erreur de l'appelant, alors qu'à la construction, il n'y a pas d'ancienne stratégie à conserver).
 
-Le contrôleur n'est pas copiable puisqu'il possède en attribut un unique_ptr vers la stratégie en cours. La présence de ce pointeur unique explique l'utilisation de std::move dans le constructeur et méthodes de classe, puisqu'un pointeur unique n'est pas copiable.
+Le contrôleur n'est pas copiable puisqu'il possède en attribut un `unique_ptr` vers la stratégie en cours. La présence de ce pointeur unique explique l'utilisation de `std::move` dans le constructeur et méthodes de classe, puisqu'un pointeur unique n'est pas copiable.
 
 Pour tester le contrôleur, une `FakeStrategy` a été implémentée afin de tester le contrôleur indépendamment des autres stratégies. Le compteur partagé permet de vérifier que la stratégie n'est pas consultée lorsque des règles de sécurité doivent être appliquées.
 
-Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer, d'où la nécessité d'un observateur (pas encore implémenté).
+Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer, d'où la nécessité d'un observateur.
 
 
 ## Gestion des différentes configurations
 
 La factory centralise la création des stratégies à partir d’une configuration. Elle retourne ensuite l’interface (pas la classe derrière). 
-La factory comporte des contrôles de sécurité s'assurant que la configuration est valide (seuil compris entre 0 et 100 (bornes incluses) et différent de NaN ). Puisque cette validation se fait seulement dans la factory, elle doit être le point d'entrée. Construire directement WateringThreshold avec un NaN donnerait une stratégie qui arrose en permanence.
+La factory comporte des contrôles de sécurité s'assurant que la configuration est valide (seuil compris entre 0 et 100 (bornes incluses) et différent de NaN ). Puisque cette validation se fait seulement dans la factory, elle doit être le point d'entrée. Construire directement `WateringThreshold` avec un NaN donnerait une stratégie qui arrose en permanence.
 Lors de l'ajout d'une stratégie, on ajoute une classe et on met à jour la factory pour gérer cette nouvelle. (inutile de toucher au contrôleur.)
 Dans le cas où une configuration invalide est passée à la factory, elle renvoie un pointeur nul (qui sera géré par le contrôleur). Une configuration invalide donne un contrôleur qui n’arrose jamais, silencieusement : c’est à l’alarme de le détecter (pas encore implémentée).
 Aujourd'hui la factory permet surtout d'isoler le seul endroit qui connaît les classes concrètes.
 
-## Comment la station réagit aux différents évènements qui surviennent?
+## Comment la station réagit aux différents événements qui surviennent?
 
-La station doit effectuer diverses actions en fonction de l'évènement qui survient:
+La station doit effectuer diverses actions en fonction de l'événement qui survient:
 
 | Événement                                        | Nature      | Réaction                                |
 | ------------------------------------------------ | ----------- | --------------------------------------- |
@@ -107,11 +107,22 @@ La station doit effectuer diverses actions en fonction de l'évènement qui surv
 | `LowWaterLevel`                                  | alerte      | l’utilisateur doit remplir le réservoir |
 | `StrategyDecisionWait` / `StrategyDecisionWater` | normal      | exécuter la décision                    |
 
-Le contrôleur diffuse un événement exactement une fois par décision, et les tests utilisent des lambdas qui enregistrent les événements. Il est le seul à connaitre la raison de l'attente ( abscence de stratégie, niveau du réservoir, manque d'information sur le réservoir, décision de la stratégie).
-Le contrôleur possède donc une liste d'abonnés à qui il diffuse exactement un événement par décision. Chaque abonné est une `std::function<void(WateringEvent)>` stockée dans un `std::vector<std::function<void(WateringEvent)>>`. L'utilisation de std::function permet de ranger toutes les lambdas réprésentant les abonnés dans la même boîte. 
+Le contrôleur diffuse un événement exactement une fois par décision, et les tests utilisent des lambdas qui enregistrent les événements. Il est le seul à connaître la raison de l'attente ( absence de stratégie, niveau du réservoir, manque d'information sur le réservoir, décision de la stratégie).
+Le contrôleur possède donc une liste d'abonnés à qui il diffuse exactement un événement par décision. Chaque abonné est une `std::function<void(WateringEvent)>` stockée dans un `std::vector<std::function<void(WateringEvent)>>`. L'utilisation de std::function permet de ranger toutes les lambdas représentant les abonnés dans la même boîte. 
 Lors d'une diffusion, les abonnés sont appelés dans l'ordre d'abonnement, ce qui signifie qu'un abonné lent retarde les suivants.
 
-Chacune de ces actions sera représentée par un observateur: celui-ci recoit un évènement transmis par le contrôleur et agit en conséquence.
-A venir: l’alarme, la notification de réservoir bas, la pompe, et le journal.
+Chacune de ces actions sera représentée par un observateur: celui-ci reçoit un événement transmis par le contrôleur et agit en conséquence.
+A venir: l’alarme, la notification de réservoir bas, la pompe.
 
 Limites: Pour cette version, il est impossible de se désabonner après abonnement. Cela signifie qu'une lambda qui capture une variable par référence appelle une référence invalide si la variable meurt avant le contrôleur.
+
+## Le journal d'événements
+
+Le journal d'événements est le premier véritable abonné de production (testé en tests, pas encore branché dans le programme complet). Il contient l'historique des événements `WateringEvent` (stockés dans un `RingBuffer`). Puisqu'il ne contient que des `WateringEvent`, le template est déclaré avec un paramètre non-type uniquement. Le journal possède une capacité N fixe et seuls les N derniers événements sont conservés. Il possède les méthodes suivantes:
+- `save(WateringEvent event)` enregistre l'événement dans le journal.
+- `size()` renvoie le nombre d'événements stockés dans le journal au moment de l'appel.
+- `at(std::size_t index)` renvoie les événements stockés dans le journal dans l'ordre chronologique (index 0 représentant l'événement le plus ancien). Pour un index hors limites, la méthode renvoie `std::nullopt`.
+Un abonné est représenté par une lambda, stockée dans le contrôleur (SubscribeHandler). Pour réaliser l'abonnement, on appelle la méthode `subscribe()` du contrôleur sur cette lambda. Le lien entre le journal et le contrôleur se fait uniquement par l'abonnement.
+
+Que se passe-t-il quand un nouvel événement est diffusé?
+La lambda abonnée capture le journal par référence, et le met à jour chaque fois qu'un nouvel événement est reçu. Le journal doit donc survivre au contrôleur, sinon la prochaine diffusion appelle une référence invalide.
