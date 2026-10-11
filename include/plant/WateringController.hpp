@@ -5,6 +5,7 @@
 #include <functional>
 #include "plant/IWateringStrategy.hpp"
 #include "plant/SubscribeHandler.hpp"
+#include "plant/WateringEnum.hpp"
 
 namespace plant
 {
