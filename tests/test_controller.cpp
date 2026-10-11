@@ -5,6 +5,7 @@
 #include <utility>
 #include "plant/IWateringStrategy.hpp"
 #include "plant/WateringController.hpp"
+#include "plant/WateringEnum.hpp"
 
 using namespace plant;
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include "plant/WateringEnum.hpp"
 
 namespace plant
 {
@@ -8,12 +9,6 @@ namespace plant
         std::optional<double> humidity;
         std::optional<double> waterLevel;
         int hour = 0;
-    };
-
-    enum class WateringDecision
-    {
-        Water,
-        Wait
     };
 
     class IWateringStrategy

@@ -2,19 +2,10 @@
 #include <algorithm>
 #include <vector>
 #include <functional>
+#include "plant/WateringEnum.hpp"
 
 namespace plant
 {
-
-    enum class WateringEvent
-    {
-        StrategyMissing,
-        UnknownTank,
-        LowWaterLevel,
-        StrategyDecisionWait,
-        StrategyDecisionWater
-    };
-
     class SubscribeHandler final
     {
     public:
