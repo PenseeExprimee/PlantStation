@@ -24,9 +24,9 @@ ctest --test-dir build --output-on-failure
 ## Notions mises en oeuvre
 | Notion | Où |
 |---|---|
-| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `ìnclude/plant/WateringController.hpp`  |
+| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `ìnclude/plant/WateringController.hpp` Factory `include/plant/StrategyFactory.hpp` Observer `include/plant/SubscribeHandler.hpp` `include/plant/WateringController.hpp` |
 | Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` |
-| Lambdas | (à venir dans le code de la station) |
+| Lambdas | `include/tests/test_controller.cpp` `include/tests/test_handleSubscribers.cpp` |
 | C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final` |
 | Tests unitaires | `tests/` |
 
@@ -107,6 +107,11 @@ La station doit effectuer diverses actions en fonction de l'évènement qui surv
 | `LowWaterLevel`                                  | alerte      | l’utilisateur doit remplir le réservoir |
 | `StrategyDecisionWait` / `StrategyDecisionWater` | normal      | exécuter la décision                    |
 
-Chacune de ces actions est représentée par un observateur: celui-ci recoit un évènement transmis par le contrôleur et agit en conséquence. Le contrôleur possède donc une liste d'abonnés à qui il diffuse des événements (en cours). Chaque abonné est une `std::function<void(WateringEvent)>>` stockée dans un `std::vector<std::function<void(WateringEvent)>`. Pour cette version, il est impossible de se désabonner après abonnement. Cela signifie qu'une lambda qui capture une variable par référence appelle une référence invalide si la variable meurt avant le contrôleur
-
+Le contrôleur diffuse un événement exactement une fois par décision, et les tests utilisent des lambdas qui enregistrent les événements. Il est le seul à connaitre la raison de l'attente ( abscence de stratégie, niveau du réservoir, manque d'information sur le réservoir, décision de la stratégie).
+Le contrôleur possède donc une liste d'abonnés à qui il diffuse exactement un événement par décision. Chaque abonné est une `std::function<void(WateringEvent)>` stockée dans un `std::vector<std::function<void(WateringEvent)>>`. L'utilisation de std::function permet de ranger toutes les lambdas réprésentant les abonnés dans la même boîte. 
 Lors d'une diffusion, les abonnés sont appelés dans l'ordre d'abonnement, ce qui signifie qu'un abonné lent retarde les suivants.
+
+Chacune de ces actions sera représentée par un observateur: celui-ci recoit un évènement transmis par le contrôleur et agit en conséquence.
+A venir: l’alarme, la notification de réservoir bas, la pompe, et le journal.
+
+Limites: Pour cette version, il est impossible de se désabonner après abonnement. Cela signifie qu'une lambda qui capture une variable par référence appelle une référence invalide si la variable meurt avant le contrôleur.
