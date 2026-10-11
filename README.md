@@ -96,3 +96,17 @@ La factory comporte des contrôles de sécurité s'assurant que la configuration
 Lors de l'ajout d'une stratégie, on ajoute une classe et on met à jour la factory pour gérer cette nouvelle. (inutile de toucher au contrôleur.)
 Dans le cas où une configuration invalide est passée à la factory, elle renvoie un pointeur nul (qui sera géré par le contrôleur). Une configuration invalide donne un contrôleur qui n’arrose jamais, silencieusement : c’est à l’alarme de le détecter (pas encore implémentée).
 Aujourd'hui la factory permet surtout d'isoler le seul endroit qui connaît les classes concrètes.
+
+## Comment la station réagit aux différents évènements qui surviennent?
+
+La station doit effectuer diverses actions en fonction de l'évènement qui survient:
+
+| Événement                                        | Nature      | Réaction                                |
+| ------------------------------------------------ | ----------- | --------------------------------------- |
+| `StrategyMissing`, `UnknownTank`                 | défaillance | à signaler à l’alarme                   |
+| `LowWaterLevel`                                  | alerte      | l’utilisateur doit remplir le réservoir |
+| `StrategyDecisionWait` / `StrategyDecisionWater` | normal      | exécuter la décision                    |
+
+Chacune de ces actions est représentée par un observateur: celui-ci recoit un évènement transmis par le contrôleur et agit en conséquence. Le contrôleur possède donc une liste d'abonnés à qui il diffuse des événements (en cours). Chaque abonné est une `std::function<void(WateringEvent)>>` stockée dans un `std::vector<std::function<void(WateringEvent)>`. Pour cette version, il est impossible de se désabonner après abonnement. Cela signifie qu'une lambda qui capture une variable par référence appelle une référence invalide si la variable meurt avant le contrôleur
+
+Lors d'une diffusion, les abonnés sont appelés dans l'ordre d'abonnement, ce qui signifie qu'un abonné lent retarde les suivants.
