@@ -301,7 +301,9 @@ TEST_F(AlarmTest, TwoIndependentSubscribers){
     //3 decisions
     WateringDecision decision = controller.decide(context_);
     decision = controller.decide(context_);
+    EXPECT_EQ(decision, WateringDecision::Wait);
     decision = controller.decide(context_);
+    EXPECT_EQ(decision, WateringDecision::Wait);
     
     EXPECT_EQ(decision, WateringDecision::Wait);
     
@@ -332,5 +334,6 @@ TEST_F(AlarmTest, TwoIndependentSubscribers){
     EXPECT_EQ(journal.at(1), WateringEvent::StrategyMissing);
     EXPECT_EQ(journal.at(2), WateringEvent::StrategyMissing);
     EXPECT_EQ(journal.at(3), WateringEvent::StrategyDecisionWater);
-
+    EXPECT_EQ(journal.at(4), std::nullopt);
+    EXPECT_EQ(journal.size(), 4u);
 }
