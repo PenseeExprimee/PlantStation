@@ -6,33 +6,10 @@
 #include "plant/IWateringStrategy.hpp"
 #include "plant/WateringController.hpp"
 #include "plant/WateringEnum.hpp"
+#include "utils/test_helpers.hpp"
 
 using namespace plant;
 
-static WateringContext createContext(std::optional<double> humidity, std::optional<double> waterLevel)
-{
-    WateringContext context;
-    context.humidity = humidity;
-    context.waterLevel = waterLevel;
-    context.hour = 8;
-    return context;
-}
-
-class FakeStrategy final : public IWateringStrategy
-{
-public:
-    FakeStrategy(WateringDecision decision, int &callCounter) : wateringDecision_(decision), addressCallCounter_(&callCounter) {}
-    
-    WateringDecision decide(const WateringContext &) const override
-    {
-        *addressCallCounter_ = *addressCallCounter_ + 1;
-        return wateringDecision_;
-    }
-
-private:
-    WateringDecision wateringDecision_;
-    int *addressCallCounter_;
-};
 
 class ControllerTest : public ::testing::Test
 {
@@ -44,11 +21,6 @@ protected:
     std::vector<WateringEvent> eventsReceived_ = {};
     std::vector<WateringEvent> eventsReceivedTwo_ = {};
 
-    WateringController createController(std::unique_ptr<IWateringStrategy> strategy)
-    {
-        WateringController controller(std::move(strategy), minWaterLevel_);
-        return controller;
-    }
     int readCounter()
     {
         return callCounter_;
@@ -65,7 +37,7 @@ protected:
 TEST_F(ControllerTest, FullTankFollowFakeStrategyOrder)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
 
     WateringDecision decision = controller.decide(context_);
 
@@ -77,7 +49,7 @@ TEST_F(ControllerTest, FullTankFollowFakeStrategyOrder)
 TEST_F(ControllerTest, FullTankFakeStrategySaysWaitShouldWait)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Wait, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
 
     WateringDecision decision = controller.decide(context_);
 
@@ -89,7 +61,7 @@ TEST_F(ControllerTest, FullTankFakeStrategySaysWaitShouldWait)
 TEST_F(ControllerTest, EmptyTankFakeStrategySaysWaterShouldWait)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     context_.waterLevel = 7.0;
     WateringDecision decision = controller.decide(context_);
 
@@ -101,7 +73,7 @@ TEST_F(ControllerTest, EmptyTankFakeStrategySaysWaterShouldWait)
 TEST_F(ControllerTest, NoTankInfoFakeStrategySaysWaterShouldWait)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     context_.waterLevel = std::nullopt;
     WateringDecision decision = controller.decide(context_);
 
@@ -113,7 +85,7 @@ TEST_F(ControllerTest, NoTankInfoFakeStrategySaysWaterShouldWait)
 TEST_F(ControllerTest, UnderMinTankLevelFakeStrategySaysWaterShouldWait)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     context_.waterLevel = 19.9;
     WateringDecision decision = controller.decide(context_);
 
@@ -125,7 +97,7 @@ TEST_F(ControllerTest, UnderMinTankLevelFakeStrategySaysWaterShouldWait)
 TEST_F(ControllerTest, TankLevelMinimumFakeStrategySaysWaterShouldWater)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy),minWaterLevel_);
     context_.waterLevel = 20.0;
     WateringDecision decision = controller.decide(context_);
 
@@ -137,7 +109,7 @@ TEST_F(ControllerTest, TankLevelMinimumFakeStrategySaysWaterShouldWater)
 TEST_F(ControllerTest, ChangeStrategyFollowNewStrategy)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     
     context_.waterLevel = 25.0;
     WateringDecision decision = controller.decide(context_);
@@ -160,7 +132,7 @@ TEST_F(ControllerTest, ChangeStrategyFollowNewStrategy)
 TEST_F(ControllerTest, NoStrategyShouldWait)
 {
     std::unique_ptr<IWateringStrategy> noPointer;
-    WateringController controller = createController(std::move(noPointer));
+    WateringController controller = createController(std::move(noPointer), minWaterLevel_);
     
     context_.waterLevel = 25.0;
     WateringDecision decision = controller.decide(context_);
@@ -171,7 +143,7 @@ TEST_F(ControllerTest, NoStrategyShouldWait)
 TEST_F(ControllerTest, ChangeStrategyToNullPointerShouldKeepOldOne)
 {
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     
     context_.waterLevel = 25.0;
     WateringDecision decision = controller.decide(context_);
@@ -193,7 +165,7 @@ TEST_F(ControllerTest, ControllerBuiltWithNoStrategyFollowsNewOne)
 {
     std::unique_ptr<IWateringStrategy> noPointer;
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
-    WateringController controller = createController(std::move(noPointer));
+    WateringController controller = createController(std::move(noPointer), minWaterLevel_);
     
     context_.waterLevel = 25.0;
     WateringDecision decision = controller.decide(context_);
@@ -213,7 +185,7 @@ TEST_F(ControllerTest, NoStrategyEventReceivedStrategyMissing){
 
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::StrategyMissing};
 
-    WateringController controller = createController(std::move(noPointer));
+    WateringController controller = createController(std::move(noPointer), minWaterLevel_);
     subscribeRecorder(controller, eventsReceived_);
     WateringDecision decision = controller.decide(context_);
 
@@ -224,7 +196,7 @@ TEST_F(ControllerTest, NoStrategyEventReceivedStrategyMissing){
 TEST_F(ControllerTest, MissingTankEventReceivedUnknownTank){
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::UnknownTank};
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
 
     subscribeRecorder(controller, eventsReceived_);
     context_.waterLevel = std::nullopt;
@@ -239,7 +211,7 @@ TEST_F(ControllerTest, LowWaterLevelEventReceivedLowWaterLevel){
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
 
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::LowWaterLevel};
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     subscribeRecorder(controller, eventsReceived_);
 
     context_.waterLevel = 19.9;
@@ -255,7 +227,7 @@ TEST_F(ControllerTest, StrategySaysWaterEventReceivedStrategySaysWater){
 
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::StrategyDecisionWater};
 
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     subscribeRecorder(controller, eventsReceived_);
     WateringDecision decision = controller.decide(context_);
 
@@ -269,7 +241,7 @@ TEST_F(ControllerTest, StrategySaysWaitEventReceivedStrategySaysWait){
 
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::StrategyDecisionWait};
 
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     subscribeRecorder(controller, eventsReceived_);
     WateringDecision decision = controller.decide(context_);
 
@@ -285,7 +257,7 @@ TEST_F(ControllerTest, ManyEventsReceivedInOrder){
     std::vector<WateringEvent> expectedEventsListOne = {WateringEvent::StrategyDecisionWait};
     std::vector<WateringEvent> expectedEventsListTwo = {WateringEvent::StrategyDecisionWait, WateringEvent::StrategyDecisionWater};
 
-    WateringController controller = createController(std::move(fakeStrategyOne));
+    WateringController controller = createController(std::move(fakeStrategyOne), minWaterLevel_);
     subscribeRecorder(controller, eventsReceived_);
     WateringDecision decision = controller.decide(context_);
 
@@ -304,7 +276,7 @@ TEST_F(ControllerTest, TwoSubscribersOneControllerReceiveTheSameEvent){
     std::unique_ptr<FakeStrategy> fakeStrategyOne = std::make_unique<FakeStrategy>(WateringDecision::Water, callCounter_);
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::StrategyDecisionWater};
 
-    WateringController controller = createController(std::move(fakeStrategyOne));
+    WateringController controller = createController(std::move(fakeStrategyOne), minWaterLevel_);
     
     subscribeRecorder(controller, eventsReceived_);
     subscribeRecorder(controller, eventsReceivedTwo_);
@@ -322,7 +294,7 @@ TEST_F(ControllerTest, LateSubscriberDoesNotGetPreviousEvent){
     std::vector<WateringEvent> expectedEventsList = {WateringEvent::StrategyDecisionWater, WateringEvent::LowWaterLevel};
     std::vector<WateringEvent> expectedEventsListTwo = {WateringEvent::LowWaterLevel};
 
-    WateringController controller = createController(std::move(fakeStrategyOne));
+    WateringController controller = createController(std::move(fakeStrategyOne), minWaterLevel_);
     subscribeRecorder(controller, eventsReceived_);
     WateringDecision decision = controller.decide(context_);
     EXPECT_EQ(decision, WateringDecision::Water);

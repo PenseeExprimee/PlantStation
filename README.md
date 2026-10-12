@@ -7,7 +7,7 @@ indépendant du matériel et testé avec GoogleTest.
 
 ## Objectif
 Mesurer l'humidité du sol et le niveau du réservoir, décider d'arroser
-selon une stratégie configurable, historiser les mesures et alerter.
+selon une stratégie configurable, historiser les événements et alerter.
 
 ## Architecture
 - `include/plant/` : coeur logique (aucune dépendance matérielle)
@@ -24,15 +24,15 @@ ctest --test-dir build --output-on-failure
 ## Notions mises en oeuvre
 | Notion | Où |
 |---|---|
-| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `include/plant/WateringController.hpp` Factory `include/plant/StrategyFactory.hpp` Observer `include/plant/SubscribeHandler.hpp` `include/plant/WateringController.hpp` `include/plant/EventJournal.hpp` |
-| Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` `include/plant/EventJournal.hpp` |
-| Lambdas | `include/tests/test_controller.cpp` `include/tests/test_handleSubscribers.cpp` |
-| C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final`, `static_assert` `std::move` `std::function` `enum class` capture avec initialisation|
+| Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `include/plant/WateringController.hpp` Factory `include/plant/StrategyFactory.hpp` Observer `include/plant/SubscribeHandler.hpp` `include/plant/WateringController.hpp` `include/plant/EventJournal.hpp` `include/plant/Alarm.hpp`|
+| Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` `include/plant/EventJournal.hpp` `include/plant/Alarm.hpp`|
+| Lambdas | `tests/test_controller.cpp` `tests/test_handleSubscribers.cpp` `tests/test_journal.cpp`, `tests/test_alarm.cpp` |
+| C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final`, `static_assert`, `std::move`, `std::function`, `enum class`, `constexpr`, capture avec initialisation|
 | Tests unitaires | `tests/` |
 
 
 ## Comment les mesures sont-elles acquises?
-`ISensor` sert à inverser la dépendance vis-à-vis du matériel, pour que le cœur soit testable sans carte. Le capteur réel sera un Adapter autour de l’API de l’ESP32.
+`ISensor` sert à inverser la dépendance vis-à-vis du matériel, pour que le coeur soit testable sans carte. Le capteur réel sera un Adapter autour de l’API de l’ESP32.
 `FakeSensor` est un test double (un fake) : il remplace le vrai capteur dans les tests.
 Ainsi le coeur dépend d'une interface et non pas du matériel.
 
@@ -69,14 +69,14 @@ Chacune des stratégies d'arrosage prend en argument une structure `WateringCont
 - `WateringThreshold`: on définit un seuil en deça duquel on arrose et au-delà duquel on ne fait rien. Au seuil, on attend également.
 L'utilisation d'un `enum class` plutôt qu'un booléen permettra dans le futur l'ajout d'autres décisions.
 Le seuil est fixé à la construction puisqu'un double n'est pas accepté en paramètre de template en C++17. De plus, un paramètre de template doit être connu à la compilation.
-Pour éviter de noyer la plante, lorsqu'aucune mesure n'est disponible, on attend. Si le capteur reste muet pendant des jours, ce sera à l'alarme de le signaler et agir en conséquence. (alarme prévue)
+Pour éviter de noyer la plante, lorsqu'aucune mesure n'est disponible, on attend. Le système présente à ce jour une limite dans le cas où le capteur reste muet pendant des jours (cf la section sur la gestion des événements).
 
 
 ## Comment est contrôlé l'arrosage?
 
 L'idée principale est le fail-safe: en cas de doute, on n'arrose pas.
 Le `WateringController` possède une stratégie d'arrosage et fonctionne comme suit:
-- Si le contrôleur est crée sans stratégie: la plante n'est pas arrosée. Le rôle de l'alarme (pas encore implémentée) sera de détecter un système qui n'arrose jamais.
+- Si le contrôleur est créé sans stratégie: la plante n'est pas arrosée. Le rôle de l'alarme est de détecter un système qui n'arrose jamais.
 - Si le niveau d'eau du réservoir est strictement inférieur au seuil minimal d'eau requis (le seuil étant fixé à la construction du contrôleur), la plante n'est pas arrosée. En cas d'égalité, la stratégie décide. Confier la gestion du réservoir au contrôleur permet de ne pas l'oublier si l'on ajoute de nouvelles stratégies d'arrosage.
 - Si le niveau est inconnu, par sécurité, la plante n'est pas arrosée.
 - Sinon, la stratégie décide d'arroser ou non la plante.
@@ -86,7 +86,7 @@ Le contrôleur n'est pas copiable puisqu'il possède en attribut un `unique_ptr`
 
 Pour tester le contrôleur, une `FakeStrategy` a été implémentée afin de tester le contrôleur indépendamment des autres stratégies. Le compteur partagé permet de vérifier que la stratégie n'est pas consultée lorsque des règles de sécurité doivent être appliquées.
 
-Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer, d'où la nécessité d'un observateur.
+Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer. C’est pour cela que le contrôleur diffuse la raison de chaque décision à ses abonnés (cf le paragraphe sur ).
 
 
 ## Gestion des différentes configurations
@@ -94,7 +94,7 @@ Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons 
 La factory centralise la création des stratégies à partir d’une configuration. Elle retourne ensuite l’interface (pas la classe derrière). 
 La factory comporte des contrôles de sécurité s'assurant que la configuration est valide (seuil compris entre 0 et 100 (bornes incluses) et différent de NaN ). Puisque cette validation se fait seulement dans la factory, elle doit être le point d'entrée. Construire directement `WateringThreshold` avec un NaN donnerait une stratégie qui arrose en permanence.
 Lors de l'ajout d'une stratégie, on ajoute une classe et on met à jour la factory pour gérer cette nouvelle. (inutile de toucher au contrôleur.)
-Dans le cas où une configuration invalide est passée à la factory, elle renvoie un pointeur nul (qui sera géré par le contrôleur). Une configuration invalide donne un contrôleur qui n’arrose jamais, silencieusement : c’est à l’alarme de le détecter (pas encore implémentée).
+Dans le cas où une configuration invalide est passée à la factory, elle renvoie un pointeur nul (qui sera géré par le contrôleur). Une configuration invalide donne un contrôleur qui n’arrose jamais, silencieusement : c’est à l’alarme de le détecter.
 Aujourd'hui la factory permet surtout d'isoler le seul endroit qui connaît les classes concrètes.
 
 ## Comment la station réagit aux différents événements qui surviennent?
@@ -103,16 +103,15 @@ La station doit effectuer diverses actions en fonction de l'événement qui surv
 
 | Événement                                        | Nature      | Réaction                                |
 | ------------------------------------------------ | ----------- | --------------------------------------- |
-| `StrategyMissing`, `UnknownTank`                 | défaillance | à signaler à l’alarme                   |
-| `LowWaterLevel`                                  | alerte      | l’utilisateur doit remplir le réservoir |
+| `StrategyMissing`, `UnknownTank`, `LowWaterLevel`                | anomalies | à signaler à l’alarme                   |
 | `StrategyDecisionWait` / `StrategyDecisionWater` | normal      | exécuter la décision                    |
 
 Le contrôleur diffuse un événement exactement une fois par décision, et les tests utilisent des lambdas qui enregistrent les événements. Il est le seul à connaître la raison de l'attente ( absence de stratégie, niveau du réservoir, manque d'information sur le réservoir, décision de la stratégie).
-Le contrôleur possède donc une liste d'abonnés à qui il diffuse exactement un événement par décision. Chaque abonné est une `std::function<void(WateringEvent)>` stockée dans un `std::vector<std::function<void(WateringEvent)>>`. L'utilisation de std::function permet de ranger toutes les lambdas représentant les abonnés dans la même boîte. 
+Le contrôleur possède donc une liste d'abonnés à qui il diffuse l'événement survenu. Chaque abonné est une `std::function<void(WateringEvent)>` stockée dans un `std::vector<std::function<void(WateringEvent)>>`. L'utilisation de std::function permet de ranger toutes les lambdas représentant les abonnés dans la même boîte. 
 Lors d'une diffusion, les abonnés sont appelés dans l'ordre d'abonnement, ce qui signifie qu'un abonné lent retarde les suivants.
 
 Chacune de ces actions sera représentée par un observateur: celui-ci reçoit un événement transmis par le contrôleur et agit en conséquence.
-A venir: l’alarme, la notification de réservoir bas, la pompe.
+A venir: la notification de réservoir bas, la pompe.
 
 Limites: Pour cette version, il est impossible de se désabonner après abonnement. Cela signifie qu'une lambda qui capture une variable par référence appelle une référence invalide si la variable meurt avant le contrôleur.
 
@@ -122,7 +121,36 @@ Le journal d'événements est le premier véritable abonné de production (test�
 - `save(WateringEvent event)` enregistre l'événement dans le journal.
 - `size()` renvoie le nombre d'événements stockés dans le journal au moment de l'appel.
 - `at(std::size_t index)` renvoie les événements stockés dans le journal dans l'ordre chronologique (index 0 représentant l'événement le plus ancien). Pour un index hors limites, la méthode renvoie `std::nullopt`.
-Un abonné est représenté par une lambda, stockée dans le contrôleur (SubscribeHandler). Pour réaliser l'abonnement, on appelle la méthode `subscribe()` du contrôleur sur cette lambda. Le lien entre le journal et le contrôleur se fait uniquement par l'abonnement.
+Un abonné est stocké dans le `SubscribeHandler` que possède le contrôleur. Pour réaliser l'abonnement, on appelle la méthode `subscribe()` du contrôleur sur cette lambda. Le lien entre le journal et le contrôleur se fait uniquement par l'abonnement.
 
 Que se passe-t-il quand un nouvel événement est diffusé?
 La lambda abonnée capture le journal par référence, et le met à jour chaque fois qu'un nouvel événement est reçu. Le journal doit donc survivre au contrôleur, sinon la prochaine diffusion appelle une référence invalide.
+
+
+## L'alarme
+L'alarme est le second abonné de production. Elle permet au système de déceler des anomalies et de lever un drapeau.
+Pour cette version, l'alarme lève un drapeau mais à ce jour, rien ne lit ce drapeau. (prévu: implémentation d'une couche matérielle avec un buzzer ou une LED).
+
+L'alarme étant un template, elle doit être créée avec un seuil N `Alarm<N>`, N représentant le nombre d'anomalies consécutives au-delà duquel (valeur seuil incluse) l'alarme sera déclenchée. Le seuil de l’alarme est un paramètre de template parce que c’est un entier fixé à la compilation, ce qui permet de refuser 0 avec static_assert ; s’il devait venir de la configuration, il faudrait le passer au constructeur et valider à l’exécution, comme pour la stratégie.
+
+Les anomalies correspondent aux événements:
+- `LowWaterLevel`
+- `UnknownTank`
+- `StrategyMissing`
+Un compteur appartenant à l'alarme représente le nombre d'anomalies consécutives survenues. Voici son fonctionnement:
+- Dans le cas où un événement qui n'est pas une anomalie survient, l'alarme si elle était levée, reste levée. Il faudra utiliser la méthode `acknowledge()` de l'alarme pour explicitement éteindre l'alarme. 
+- Le compteur propre à l'alarme continue de compter tant que l’alarme est levée.
+- Un acquittement sur une alarme non levée ne change rien.
+- Un événement normal remet le compteur à zéro, mais ne baisse pas l’alarme.
+- Le terme "consécutives" désigne des décisions consécutives (pas le temps écoulé).
+
+Limite: 
+- L'alarme ne couvre pas le cas d'un capteur muet. Imaginons que le capteur d’humidité ne donne plus rien. `WateringThreshold` répond `Wait` quand l’humidité est absente. Le contrôleur diffuse alors `StrategyDecisionWait`, qui est un événement normal, donc l’alarme remet son compteur à zéro. L’alarme ne se lèvera jamais, et la plante ne sera jamais arrosée.
+Solution envisagée: Ajouter un événement `UnknownHumidity`. Celà impliquerait qu'en plus de vérifier le niveau du réservoir avant de déléguer la prise de décision à la stratégie, le contrôleur doit également vérifier que l'humidité est connue. Celà ne pose pas de problème si les stratégies à implémenter dans le futur utilisent toutes le niveau d'humidité pour prendre une décision.
+
+Comme le journal, l'alarme doit survivre au contrôleur.
+
+## Reste à faire
+- Désabonnement
+- Acquittement physique (bouton)
+- Couche matérielle (ESP32 et capteurs)

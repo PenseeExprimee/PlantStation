@@ -5,32 +5,19 @@
 #include "plant/IWateringStrategy.hpp"
 #include "plant/WateringController.hpp"
 #include "plant/StrategyFactory.hpp"
+#include "utils/test_helpers.hpp"
 
 using namespace plant;
 
 constexpr double POS_INF = std::numeric_limits<double>::infinity();
 constexpr double NEG_INF = -std::numeric_limits<double>::infinity();
 
-static WateringContext createContext(std::optional<double> humidity, std::optional<double> waterLevel)
-{
-    WateringContext context;
-    context.humidity = humidity;
-    context.waterLevel = waterLevel;
-    context.hour = 8;
-    return context;
-}
 
 class FactoryTestIntegration : public ::testing::Test
 {
 protected:
     double minWaterLevel_ = 20.0;
     WateringContext context_ = createContext(12, 100);
-
-    WateringController createController(std::unique_ptr<IWateringStrategy> strategy)
-    {
-        WateringController controller(std::move(strategy), minWaterLevel_);
-        return controller;
-    }
 };
 
 TEST(FactoryTest, ValidConfiguration){
@@ -76,7 +63,7 @@ TEST_F(FactoryTestIntegration, StrategyIntegrationWorksFine){
     std::unique_ptr<IWateringStrategy> strategy = createStrategy(configuration);
     ASSERT_NE(strategy, nullptr);
 
-    WateringController wateringController = createController(std::move(strategy));
+    WateringController wateringController = createController(std::move(strategy), minWaterLevel_);
     WateringDecision decision = wateringController.decide(context_);
 
     EXPECT_EQ(decision, WateringDecision::Water);
@@ -85,7 +72,7 @@ TEST_F(FactoryTestIntegration, StrategyIntegrationWorksFine){
     std::unique_ptr<IWateringStrategy> strategyTwo = createStrategy(configurationTwo);
     ASSERT_NE(strategyTwo, nullptr);
 
-    WateringController wateringControllerTwo = createController(std::move(strategyTwo));
+    WateringController wateringControllerTwo = createController(std::move(strategyTwo), minWaterLevel_);
     WateringDecision decisionTwo = wateringControllerTwo.decide(context_);
 
     EXPECT_EQ(decisionTwo, WateringDecision::Wait);

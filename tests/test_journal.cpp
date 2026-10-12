@@ -7,33 +7,10 @@
 #include "plant/EventJournal.hpp"
 #include "plant/IWateringStrategy.hpp"
 #include "plant/WateringController.hpp"
+#include "utils/test_helpers.hpp"
 
 using namespace plant;
 
-static WateringContext createContext(std::optional<double> humidity, std::optional<double> waterLevel)
-{
-    WateringContext context;
-    context.humidity = humidity;
-    context.waterLevel = waterLevel;
-    context.hour = 8;
-    return context;
-}
-
-class FakeStrategy final : public IWateringStrategy
-{
-public:
-    FakeStrategy(WateringDecision decision, int &callCounter) : wateringDecision_(decision), addressCallCounter_(&callCounter) {}
-    
-    WateringDecision decide(const WateringContext &) const override
-    {
-        *addressCallCounter_ = *addressCallCounter_ + 1;
-        return wateringDecision_;
-    }
-
-private:
-    WateringDecision wateringDecision_;
-    int *addressCallCounter_;
-};
 
 class JournalTest : public ::testing::Test
 {
@@ -41,20 +18,6 @@ protected:
     double minWaterLevel_ = 20.0;
     WateringContext context_ = createContext(40, 100);
     int callCounter_ = 0;
-
-    WateringController createController(std::unique_ptr<IWateringStrategy> strategy)
-    {
-        WateringController controller(std::move(strategy), minWaterLevel_);
-        return controller;
-    }
-
-    template <std::size_t N>
-    void subscribeJournal(WateringController &controller, EventJournal<N> &journal){
-        auto getEvent = [&journal](WateringEvent event){
-            journal.save(event);
-        };
-        controller.subscribe(getEvent);
-    }
 };
 
 TEST(JournalEvents, ANewJournalIsEmpty){
@@ -99,7 +62,7 @@ TEST(JournalEvents, KeepTheNLastValuesInOrder){
 TEST_F(JournalTest, theJournalContainsTheDecisionsSequenceAndForgetsTheOldest){
     EventJournal<3> eventJournal;
     std::unique_ptr<FakeStrategy> fakeStrategy = std::make_unique<FakeStrategy>(WateringDecision::Wait, callCounter_);
-    WateringController controller = createController(std::move(fakeStrategy));
+    WateringController controller = createController(std::move(fakeStrategy), minWaterLevel_);
     subscribeJournal(controller, eventJournal);
 
     //Normal context: Consult the strategy that says wait
