@@ -13,9 +13,9 @@ namespace plant
         case WateringEvent::UnknownTank:
             return "The level of the tank cannot be read.";
         case WateringEvent::LowWaterLevel:
-            return "There is not enough water left in the tank.";
+            return "Not enough water left in the tank.";
         case WateringEvent::StrategyDecisionWait:
-            return "The plant does not need to be watered right now. Let's wait.";
+            return "No watering needed. Let's wait.";
         case WateringEvent::StrategyDecisionWater:
             return "The plant needs watering.";
         }

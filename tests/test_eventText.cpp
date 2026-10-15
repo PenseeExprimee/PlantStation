@@ -8,12 +8,12 @@ using namespace plant;
 TEST(EventText, EventLowWater){
     
     std::string_view event = eventText(WateringEvent::LowWaterLevel);
-    EXPECT_EQ(event, "There is not enough water left in the tank.");
+    EXPECT_EQ(event, "Not enough water left in the tank.");
 }
 
 TEST(EventText, EventStrategyDecisionWait){
     std::string_view event = eventText(WateringEvent::StrategyDecisionWait);
-    EXPECT_EQ(event, "The plant does not need to be watered right now. Let's wait.");
+    EXPECT_EQ(event, "No watering needed. Let's wait.");
 }
 
 TEST(EventText, EventStrategyDecisionWater){
