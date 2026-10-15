@@ -30,8 +30,9 @@ int main()
     std::vector<std::optional<double>> tankScript = {
         80, 75, 70, 65, 60, 55, 10, 5, 90, 85, 80, std::nullopt, std::nullopt,
         std::nullopt, 65, 60};
-    
-    if (humidityScript.size() != NUMBER_OF_CYCLES || tankScript.size() != NUMBER_OF_CYCLES){
+
+    if (humidityScript.size() != NUMBER_OF_CYCLES || tankScript.size() != NUMBER_OF_CYCLES)
+    {
         std::cerr << "The size of one or both of the scripts is incorrect." << "\n";
         return 1;
     }
@@ -41,13 +42,25 @@ int main()
     MovingAverage<double, MOVING_AVERAGE_WINDOW_SIZE> humidityFilter;
     EventJournal<JOURNAL_CAPACITY> eventJournal;
     Alarm<ALARM_TRIGGER_THRESHOLD> anomalyAlarm;
-    
+
     std::unique_ptr<IWateringStrategy> strategy = createStrategy(configuration);
-    if (strategy == nullptr){
+    if (strategy == nullptr)
+    {
         std::cerr << "The factory could not create a strategy." << "\n";
         return 1;
     }
+
+    std::optional<WateringEvent> lastEvent;
     WateringController controller(std::move(strategy), MINIMUM_WATER_LEVEL);
 
+    // journal
+    controller.subscribe([&eventJournal](WateringEvent event)
+                         { eventJournal.save(event); });
+    // alarm
+    controller.subscribe([&anomalyAlarm](WateringEvent event)
+                         { anomalyAlarm.handle(event); });
+    // dispay
+    controller.subscribe([&lastEvent](WateringEvent event)
+                         { lastEvent = event; });
     return 0;
 }
