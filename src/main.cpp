@@ -18,7 +18,7 @@ constexpr double MINIMUM_WATER_LEVEL = 20;
 constexpr std::size_t MOVING_AVERAGE_WINDOW_SIZE = 3;
 constexpr std::size_t ALARM_TRIGGER_THRESHOLD = 3;
 constexpr std::size_t JOURNAL_CAPACITY = 8;
-constexpr int NUMBER_OF_CYCLES = 16;
+constexpr std::size_t NUMBER_OF_CYCLES = 16;
 
 int main()
 {
