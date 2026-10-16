@@ -1,6 +1,6 @@
 # 🌱 Plant Station
 
-Station de surveillance de plante basée sur ESP32, avec un coeur en C++17
+Station de surveillance de plante conçue pour ESP32, avec un coeur en C++17
 indépendant du matériel et testé avec GoogleTest.
 
 ![CI](https://github.com/PenseeExprimee/PlantStation/actions/workflows/ci.yml/badge.svg)
@@ -9,31 +9,96 @@ indépendant du matériel et testé avec GoogleTest.
 Mesurer l'humidité du sol et le niveau du réservoir, décider d'arroser
 selon une stratégie configurable, historiser les événements et alerter.
 
-## Architecture
-- `include/plant/` : coeur logique (aucune dépendance matérielle)
-- `tests/` : tests unitaires GoogleTest
-- `firmware/` : couche ESP32 (à venir)
-
-## Build et tests
+## Démarrage rapide
+Prérequis : CMake 3.14 ou plus, un compilateur C++17, et un accès internet à la première configuration (GoogleTest est téléchargé).
 ```bash
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
+./build/plant_simulation
 ```
+
+La sortie du programme est en anglais, comme le code:
+```text
+Cycle   Read humidity     Tank level      Average humidity      Alarm counter    Alarm state     Event text
+-------------------------------------------------------------------------------------------------
+1       20.00             80.00           20.00                 0                idle            The plant needs watering.
+2       25.00             75.00           22.50                 0                idle            The plant needs watering.
+3       45.00             70.00           30.00                 0                idle            No watering needed. Let's wait.
+4       50.00             65.00           40.00                 0                idle            No watering needed. Let's wait.
+5       15.00             60.00           36.67                 0                idle            No watering needed. Let's wait.
+6       10.00             55.00           25.00                 0                idle            The plant needs watering.
+7       18.00             10.00           14.33                 1                idle            Not enough water left in the tank.
+8       12.00             5.00            13.33                 2                idle            Not enough water left in the tank.
+9       15.00             90.00           15.00                 0                idle            The plant needs watering.
+10      60.00             85.00           29.00                 0                idle            The plant needs watering.
+11      55.00             80.00           43.33                 0                idle            No watering needed. Let's wait.
+12      20.00             n/a             45.00                 1                idle            The level of the tank cannot be read.
+13      10.00             n/a             28.33                 2                idle            The level of the tank cannot be read.
+14      10.00             n/a             13.33                 3                raised          The level of the tank cannot be read.
+15      5.00              65.00           8.33                  0                raised          The plant needs watering.
+16      8.00              60.00           7.67                  0                raised          The plant needs watering.
+--------------JOURNAL------------------
+The plant needs watering.
+The plant needs watering.
+No watering needed. Let's wait.
+The level of the tank cannot be read.
+The level of the tank cannot be read.
+The level of the tank cannot be read.
+The plant needs watering.
+The plant needs watering.
+```
+Alarme avant acquittement:
+
+```
+Alarm status: raised
+Anomalies counter: 0
+```
+Alarme après acquittement:
+
+```
+Alarm status: idle
+Anomalies counter: 0
+```
+Note: Le programme renvoie 0 s'il se termine sans erreur.
+Tout est simulé : les capteurs lisent des valeurs prédéfinies, et rien ne pilote de pompe.
+
+### Comprendre la sortie
+- La décision porte sur la moyenne des trois dernières mesures d'humidité. 
+Au cycle 3, la moyenne vaut exactement le seuil, on attend.
+Aux cycles 5 et 10, la décision ne suit pas la lecture brute : le sol lu est sec au cycle 5, mais la moyenne des trois dernières mesures (36,67) reste au-dessus du seuil de 30. C’est le rôle du filtre : une mesure isolée ne fait pas basculer la décision.
+Entre les cycles 12 et 14, les anomalies sont comptées par le compteur d'anomalies. L'alarme ne se lève qu'au cycle 14, puisque l'alarme se lève au bout de 3 anomalies consécutives.
+Pendant les cycles 15 et 16, l'arrivée d'événements qui ne sont pas des anomalies permet la remise à 0 du compteur d'anomalies. Cependant, l'alarme reste levée puisque seul un acquittement peut la faire descendre.
+
+- Le réservoir ne passe pas par le filtre : sinon average() renverrait la moyenne des anciennes valeurs quand le capteur se tait, UnknownTank ne se produirait jamais.
+
+- L'alarme se lève au cycle 14, et reste levée jusqu'à l'acquittement.
+
+### Auto-vérification
+En plus d’afficher la sortie, le programme compare sa propre exécution au scénario attendu : les seize événements, le contenu du journal, le cycle où l’alarme se lève, l’état de l’alarme avant et après l’acquittement. Si quelque chose diffère, il l’écrit sur la sortie d’erreur et retourne un code non nul. CTest lance ce programme et le CI lance CTest : une règle cassée fait donc échouer le build.
+
+
+## Architecture
+- `src/` : Programme principal
+- `include/plant/` : coeur logique (aucune dépendance matérielle)
+- `tests/` : tests unitaires GoogleTest
+- `firmware/` : couche ESP32 (à venir)
+- `plant_simulation` : cible CMake construite à partir de `src/main.cpp`
+
 
 ## Notions mises en oeuvre
 | Notion | Où |
 |---|---|
 | Design patterns | Strategy `include/plant/IWateringStrategy.hpp` `include/plant/WateringThreshold.hpp` `include/plant/WateringController.hpp` Factory `include/plant/StrategyFactory.hpp` Observer `include/plant/SubscribeHandler.hpp` `include/plant/WateringController.hpp` `include/plant/EventJournal.hpp` `include/plant/Alarm.hpp`|
 | Templates | `include/plant/RingBuffer.hpp`, `include/plant/MovingAverage.hpp` `include/plant/EventJournal.hpp` `include/plant/Alarm.hpp`|
-| Lambdas | `tests/test_controller.cpp` `tests/test_handleSubscribers.cpp` `tests/test_journal.cpp`, `tests/test_alarm.cpp` |
+| Lambdas | `src/main.cpp`,`tests/test_controller.cpp` `tests/test_handleSubscribers.cpp` `tests/test_journal.cpp`, `tests/test_alarm.cpp` |
 | C++ moderne | `std::optional`, `std::unique_ptr`, `override`, `final`, `static_assert`, `std::move`, `std::function`, `enum class`, `constexpr`, capture avec initialisation|
 | Tests unitaires | `tests/` |
 
 
 ## Comment les mesures sont-elles acquises?
 `ISensor` sert à inverser la dépendance vis-à-vis du matériel, pour que le coeur soit testable sans carte. Le capteur réel sera un Adapter autour de l’API de l’ESP32.
-`FakeSensor` est un test double (un fake) : il remplace le vrai capteur dans les tests.
+`FakeSensor` est un test double (un fake) : il remplace le vrai capteur dans les tests et alimente la simulation.
 Ainsi le coeur dépend d'une interface et non pas du matériel.
 
 ## Où sont conservées les mesures?
@@ -69,7 +134,7 @@ Chacune des stratégies d'arrosage prend en argument une structure `WateringCont
 - `WateringThreshold`: on définit un seuil en deça duquel on arrose et au-delà duquel on ne fait rien. Au seuil, on attend également.
 L'utilisation d'un `enum class` plutôt qu'un booléen permettra dans le futur l'ajout d'autres décisions.
 Le seuil est fixé à la construction puisqu'un double n'est pas accepté en paramètre de template en C++17. De plus, un paramètre de template doit être connu à la compilation.
-Pour éviter de noyer la plante, lorsqu'aucune mesure n'est disponible, on attend. Le système présente à ce jour une limite dans le cas où le capteur reste muet pendant des jours (cf la section sur la gestion des événements).
+Pour éviter de noyer la plante, lorsqu'aucune mesure n'est disponible, on attend. Le système présente à ce jour une limite dans le cas où le capteur reste muet pendant des jours (cf. la section sur l’alarme).
 
 
 ## Comment est contrôlé l'arrosage?
@@ -86,7 +151,7 @@ Le contrôleur n'est pas copiable puisqu'il possède en attribut un `unique_ptr`
 
 Pour tester le contrôleur, une `FakeStrategy` a été implémentée afin de tester le contrôleur indépendamment des autres stratégies. Le compteur partagé permet de vérifier que la stratégie n'est pas consultée lorsque des règles de sécurité doivent être appliquées.
 
-Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer. C’est pour cela que le contrôleur diffuse la raison de chaque décision à ses abonnés (cf le paragraphe sur ).
+Remarque: Le contrôleur se trouve dans une position d'attente pour des raisons diverses que l'appelant ne peut distinguer. C’est pour cela que le contrôleur diffuse la raison de chaque décision à ses abonnés (cf. le paragraphe Comment la station réagit aux différents événements ).
 
 
 ## Gestion des différentes configurations
@@ -117,7 +182,7 @@ Limites: Pour cette version, il est impossible de se désabonner après abonneme
 
 ## Le journal d'événements
 
-Le journal d'événements est le premier véritable abonné de production (testé en tests, pas encore branché dans le programme complet). Il contient l'historique des événements `WateringEvent` (stockés dans un `RingBuffer`). Puisqu'il ne contient que des `WateringEvent`, le template est déclaré avec un paramètre non-type uniquement. Le journal possède une capacité N fixe et seuls les N derniers événements sont conservés. Il possède les méthodes suivantes:
+Le journal d'événements est le premier véritable abonné de production (testé en tests et branché dans le programme complet). Il contient l'historique des événements `WateringEvent` (stockés dans un `RingBuffer`). Puisqu'il ne contient que des `WateringEvent`, le template est déclaré avec un paramètre non-type uniquement. Le journal possède une capacité N fixe et seuls les N derniers événements sont conservés. Il possède les méthodes suivantes:
 - `save(WateringEvent event)` enregistre l'événement dans le journal.
 - `size()` renvoie le nombre d'événements stockés dans le journal au moment de l'appel.
 - `at(std::size_t index)` renvoie les événements stockés dans le journal dans l'ordre chronologique (index 0 représentant l'événement le plus ancien). Pour un index hors limites, la méthode renvoie `std::nullopt`.
@@ -129,9 +194,9 @@ La lambda abonnée capture le journal par référence, et le met à jour chaque 
 
 ## L'alarme
 L'alarme est le second abonné de production. Elle permet au système de déceler des anomalies et de lever un drapeau.
-Pour cette version, l'alarme lève un drapeau mais à ce jour, rien ne lit ce drapeau. (prévu: implémentation d'une couche matérielle avec un buzzer ou une LED).
+Pour cette version, l'alarme lève un drapeau mais à ce jour, elle est seulement affichée par la simulation. (prévu: implémentation d'une couche matérielle avec un buzzer ou une LED).
 
-L'alarme étant un template, elle doit être créée avec un seuil N `Alarm<N>`, N représentant le nombre d'anomalies consécutives au-delà duquel (valeur seuil incluse) l'alarme sera déclenchée. Le seuil de l’alarme est un paramètre de template parce que c’est un entier fixé à la compilation, ce qui permet de refuser 0 avec static_assert ; s’il devait venir de la configuration, il faudrait le passer au constructeur et valider à l’exécution, comme pour la stratégie.
+L'alarme étant un template, elle doit être créée avec un seuil N `Alarm<N>`, N représentant le nombre d'anomalies consécutives au-delà duquel (valeur seuil incluse) l'alarme sera déclenchée. Le seuil de l’alarme est un paramètre de template parce que c’est un entier fixé à la compilation, ce qui permet de refuser 0 avec `static_assert` ; s’il devait venir de la configuration, il faudrait le passer au constructeur et valider à l’exécution, comme pour la stratégie.
 
 Les anomalies correspondent aux événements:
 - `LowWaterLevel`
@@ -146,7 +211,7 @@ Un compteur appartenant à l'alarme représente le nombre d'anomalies consécuti
 
 Limite: 
 - L'alarme ne couvre pas le cas d'un capteur muet. Imaginons que le capteur d’humidité ne donne plus rien. `WateringThreshold` répond `Wait` quand l’humidité est absente. Le contrôleur diffuse alors `StrategyDecisionWait`, qui est un événement normal, donc l’alarme remet son compteur à zéro. L’alarme ne se lèvera jamais, et la plante ne sera jamais arrosée.
-Solution envisagée: Ajouter un événement `UnknownHumidity`. Celà impliquerait qu'en plus de vérifier le niveau du réservoir avant de déléguer la prise de décision à la stratégie, le contrôleur doit également vérifier que l'humidité est connue. Celà ne pose pas de problème si les stratégies à implémenter dans le futur utilisent toutes le niveau d'humidité pour prendre une décision.
+Solution envisagée: Ajouter un événement `UnknownHumidity`. Cela impliquerait qu'en plus de vérifier le niveau du réservoir avant de déléguer la prise de décision à la stratégie, le contrôleur doit également vérifier que l'humidité est connue. Cela ne pose pas de problème si les stratégies à implémenter dans le futur utilisent toutes le niveau d'humidité pour prendre une décision.
 
 Comme le journal, l'alarme doit survivre au contrôleur.
 
